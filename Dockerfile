@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.0.1-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.0.1-base-ubuntu20.04
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -11,9 +11,7 @@ COPY requirements.txt .
 RUN python3 -m pip install -r requirements.txt
 
 WORKDIR /app
-COPY . /app
+COPY src/ /app
 
-RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
-USER appuser
 
-CMD ["python", "src\main.py"]
+RUN ["python3", "main.py"]
