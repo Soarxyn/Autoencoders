@@ -11,17 +11,17 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision.utils import make_grid
 
 
-class DenoiseAutoencoder(pl.LightningModule):
+class InpaintingAutoencoder(pl.LightningModule):
     def __init__(self, autoencoder: nn.Module, learning_rate: float) -> None:
-        super(DenoiseAutoencoder, self).__init__()
+        super(InpaintingAutoencoder, self).__init__()
 
         self.autoencoder = autoencoder
-        self.criterion = nn.MSELoss()
+        self.criterion_1 = nn.MSELoss()
+        self.criterion_2 = nn.BCEWithLogitsLoss()
         self.learning_rate = learning_rate
+        self.m = nn.Sigmoid()
 
-        metrics = tm.MetricCollection(
-            {"Accuracy": tm.Accuracy("binary"), "Peak SNR": tm.PeakSignalNoiseRatio()}
-        )
+        metrics = tm.MetricCollection({"Accuracy": tm.Accuracy("binary")})
 
         self.training_metrics = metrics.clone()
         self.validation_metrics = metrics.clone()
@@ -45,11 +45,16 @@ class DenoiseAutoencoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
-        noisy = x + torch.randn(x.size(), device="cuda")
+        _, _, h, w = x.size()
+
+        blocked = x.clone()
+        blocked[:, :, h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 1.0
+
         y = x.clone().int()
 
-        prediction = self.forward(noisy)
-        loss = self.criterion(prediction, x)
+        prediction = self.forward(blocked)
+        s = self.m(prediction)
+        loss = self.criterion_1(s, x) + self.criterion_2(prediction, x)
 
         self.training_metrics(prediction, y)
         self.training_loss(loss.item())
@@ -75,17 +80,21 @@ class DenoiseAutoencoder(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, _ = batch
-        noisy = x + torch.randn(x.size(), device="cuda")
+        _, _, h, w = x.size()
+
+        blocked = x.clone()
+        blocked[:, :, h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 1.0
         y = x.clone().int()
 
-        prediction = self.forward(noisy)
-        loss = self.criterion(prediction, x)
+        prediction = self.forward(blocked)
+        s = self.m(prediction)
+        loss = self.criterion_1(s, x) + self.criterion_2(prediction, x)
 
         self.validation_metrics(prediction, y)
         self.validation_loss(loss.item())
 
         self.validation_samples.append(x[0].detach().cpu())
-        self.validation_inputs.append(noisy[0].detach().cpu())
+        self.validation_inputs.append(blocked[0].detach().cpu())
         self.validation_preds.append(prediction[0].detach().cpu())
 
         return loss
@@ -130,7 +139,7 @@ class SampleLogger(pl.Callback):
         self.freq: int = freq
 
     def on_validation_epoch_end(
-        self, trainer: pl.Trainer, pl_module: DenoiseAutoencoder
+        self, trainer: pl.Trainer, pl_module: InpaintingAutoencoder
     ) -> None:
         if trainer.current_epoch % self.freq == 0 and not trainer.sanity_checking:
             idxs = random.sample(

@@ -6,7 +6,7 @@ import pytorch_lightning.loggers as loggers
 import torch
 from core.resunet import ResUNet
 from datasets.mnist import MNISTDatamodule
-from trainers.denoise import DenoiseAutoencoder, SampleLogger
+from trainers.inpainting import InpaintingAutoencoder, SampleLogger
 
 
 def init_trainer(
@@ -56,7 +56,7 @@ def main() -> None:
 
     mnist = MNISTDatamodule()
     network = ResUNet(input_dim=1, output_dim=1, filters=[32, 64, 128, 10], logits=True)
-    autoencoder = DenoiseAutoencoder(autoencoder=network, learning_rate=1e-3)
+    autoencoder = InpaintingAutoencoder(autoencoder=network, learning_rate=1e-3)
 
     trainer.fit(autoencoder, datamodule=mnist)
 
